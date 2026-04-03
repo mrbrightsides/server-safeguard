@@ -1,18 +1,15 @@
 {
-  "name": "server-safeguard",
+  "name": "safeguard-mcp",
   "version": "1.0.0",
-  "description": "",
-  "main": "index.js",
+  "type": "module", 
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "start": "node server.js",
+    "dev": "tsx server.ts"
   },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "type": "commonjs",
   "dependencies": {
-    "@google/genai": "^1.48.0",
-    "@modelcontextprotocol/sdk": "^1.29.0",
-    "express": "^5.2.1"
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "@google/genai": "^0.1.0",
+    "express": "^4.18.2",
+    "zod": "^3.22.4"
   }
 }
