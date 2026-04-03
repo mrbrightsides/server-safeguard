@@ -54,16 +54,13 @@ server.tool(
 );
 
 // 3. SSE Transport Management
-let transport: SSEServerTransport | null = null;
+const transports = new Map<string, SSEServerTransport>();
 
 app.get("/sse", async (req, res) => {
   console.log("--- New SSE Connection Attempt ---");
-  
-  // Proteksi untuk browser biasa / Health Check Render
-  app.get("/sse", async (req, res) => {
-  console.log("--- New SSE Connection Attempt ---");
 
-  if (!req.headers.accept?.includes('text/event-stream')) {
+  // Proteksi untuk browser biasa / Health Check Render
+  if (!req.headers.accept?.includes("text/event-stream")) {
     return res.send("SafeGuard MCP SSE is Active.");
   }
 
@@ -72,7 +69,6 @@ app.get("/sse", async (req, res) => {
   res.setHeader("Connection", "keep-alive");
 
   const transport = new SSEServerTransport("/messages", res);
-
   transports.set(transport.sessionId, transport);
 
   try {
@@ -84,11 +80,16 @@ app.get("/sse", async (req, res) => {
 
   req.on("close", () => {
     console.log("Connection Closed");
+    transports.delete(transport.sessionId);
   });
 });
 
 app.post("/messages", async (req, res) => {
-  const sessionId = req.query.sessionId as string;
+  const sessionId = req.query.sessionId as string | undefined;
+
+  if (!sessionId) {
+    return res.status(400).send("Missing sessionId.");
+  }
 
   const transport = transports.get(sessionId);
 
@@ -104,7 +105,7 @@ app.get("/", (req, res) => {
 });
 
 // PENTING: Gunakan process.env.PORT agar Render bisa mendeteksi portnya
-const PORT = process.env.PORT || 3000;
+const PORT = Number(process.env.PORT) || 3000;
 app.listen(PORT, "0.0.0.0", () => {
   console.log(`🚀 Server listening on port ${PORT}`);
 });
