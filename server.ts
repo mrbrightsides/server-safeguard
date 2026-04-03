@@ -60,16 +60,21 @@ app.get("/sse", async (req, res) => {
   console.log("--- New SSE Connection Attempt ---");
   
   // Proteksi untuk browser biasa / Health Check Render
+  app.get("/sse", async (req, res) => {
+  console.log("--- New SSE Connection Attempt ---");
+
   if (!req.headers.accept?.includes('text/event-stream')) {
-    return res.send("SafeGuard MCP SSE is Active. Connect via Prompt Opinion.");
+    return res.send("SafeGuard MCP SSE is Active.");
   }
 
   res.setHeader("Content-Type", "text/event-stream");
   res.setHeader("Cache-Control", "no-cache");
   res.setHeader("Connection", "keep-alive");
 
-  transport = new SSEServerTransport("/messages", res);
-  
+  const transport = new SSEServerTransport("/messages", res);
+
+  transports.set(transport.sessionId, transport);
+
   try {
     await server.connect(transport);
     console.log("✅ MCP Server connected to SSE");
@@ -79,11 +84,14 @@ app.get("/sse", async (req, res) => {
 
   req.on("close", () => {
     console.log("Connection Closed");
-    transport = null;
   });
 });
 
 app.post("/messages", async (req, res) => {
+  const sessionId = req.query.sessionId as string;
+
+  const transport = transports.get(sessionId);
+
   if (transport) {
     await transport.handlePostMessage(req, res);
   } else {
