@@ -5,14 +5,23 @@ import express from "express";
 import cors from "cors";
 import { z } from "zod";
 
+const app = express();
+app.use(cors());
+app.use(express.json());
+
+// 1. Inisialisasi Gemini dengan aman (Anti-Crash)
 const apiKey = process.env.GEMINI_API_KEY;
-const ai = new GoogleGenAI({ apiKey: apiKey! });
+if (!apiKey) {
+  console.error("⚠️ WARNING: GEMINI_API_KEY is missing in Environment Variables!");
+}
+const ai = new GoogleGenAI({ apiKey: apiKey || "dummy_key" });
 
 const server = new McpServer({
   name: "SafeGuard-Intelligence",
   version: "1.0.0",
 });
 
+// 2. Daftarkan Tool
 server.tool(
   "analyze_psychosocial_risk",
   "Menganalisis risiko psikososial pasien",
@@ -22,58 +31,68 @@ server.tool(
   },
   async ({ patient_fhir_data, assessment_scores }) => {
     try {
-      // PERBAIKAN: Gunakan ai.models.generateContent (Sintaks @google/genai)
+      if (!apiKey || apiKey === "dummy_key") {
+        throw new Error("API Key Gemini belum diset di server.");
+      }
+      
       const response = await ai.models.generateContent({
         model: "gemini-3-flash-preview",
         contents: `Analisis risiko psikososial pasien: ${patient_fhir_data} dengan skor: ${assessment_scores}. Berikan output Tingkat Risiko (L0-L3) dan Rekomendasi.`
       });
       
       return { 
-        content: [{ type: "text", text: response.text || "Gagal mendapatkan hasil." }] 
+        content: [{ type: "text", text: response.text || "AI tidak memberikan respon." }] 
       };
     } catch (err) {
+      console.error("Tool Error:", err);
       return { 
-        content: [{ type: "text", text: "AI Error: " + String(err) }], 
+        content: [{ type: "text", text: "Error: " + (err instanceof Error ? err.message : String(err)) }], 
         isError: true 
       };
     }
   }
 );
 
-const app = express();
-app.use(cors());
-app.use(express.json());
-
-let activeTransport: SSEServerTransport | null = null;
+// 3. SSE Transport Management
+let transport: SSEServerTransport | null = null;
 
 app.get("/sse", async (req, res) => {
-  console.log("--- New SSE Connection ---");
-  res.writeHead(200, {
-    "Content-Type": "text/event-stream",
-    "Cache-Control": "no-cache",
-    "Connection": "keep-alive",
-    "X-Accel-Buffering": "no"
-  });
+  console.log("--- New SSE Connection Attempt ---");
+  
+  // Proteksi untuk browser biasa / Health Check Render
+  if (req.headers.accept !== 'text/event-stream') {
+    return res.send("SafeGuard MCP SSE is Active. Connect via Prompt Opinion.");
+  }
 
-  activeTransport = new SSEServerTransport("/messages", res);
-  await server.connect(activeTransport);
+  transport = new SSEServerTransport("/messages", res);
+  
+  try {
+    await server.connect(transport);
+    console.log("✅ MCP Server connected to SSE");
+  } catch (error) {
+    console.error("❌ Failed to connect MCP server:", error);
+  }
 
   req.on("close", () => {
-    activeTransport = null;
+    console.log("Connection Closed");
+    transport = null;
   });
 });
 
 app.post("/messages", async (req, res) => {
-  if (activeTransport) {
-    await activeTransport.handlePostMessage(req, res);
+  if (transport) {
+    await transport.handlePostMessage(req, res);
   } else {
     res.status(400).send("No active session.");
   }
 });
 
-app.get("/", (req, res) => res.send("SafeGuard MCP is Ready and Stable!"));
+app.get("/", (req, res) => {
+  res.send("<h1>SafeGuard MCP Online</h1><p>Status: Ready</p>");
+});
 
-const PORT = process.env.PORT || 3001;
+// PENTING: Gunakan process.env.PORT agar Render bisa mendeteksi portnya
+const PORT = process.env.PORT || 3000;
 app.listen(PORT, "0.0.0.0", () => {
-  console.log(`Server running on port ${PORT}`);
+  console.log(`🚀 Server listening on port ${PORT}`);
 });
