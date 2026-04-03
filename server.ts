@@ -5,6 +5,8 @@ import express from "express";
 import cors from "cors";
 import { z } from "zod";
 
+(res as any).flushHeaders?.();
+
 const app = express();
 app.use(cors());
 app.use(express.json());
@@ -60,9 +62,13 @@ app.get("/sse", async (req, res) => {
   console.log("--- New SSE Connection Attempt ---");
   
   // Proteksi untuk browser biasa / Health Check Render
-  if (req.headers.accept !== 'text/event-stream') {
+  if (!req.headers.accept?.includes('text/event-stream')) {
     return res.send("SafeGuard MCP SSE is Active. Connect via Prompt Opinion.");
   }
+
+  res.setHeader("Content-Type", "text/event-stream");
+  res.setHeader("Cache-Control", "no-cache");
+  res.setHeader("Connection", "keep-alive");
 
   transport = new SSEServerTransport("/messages", res);
   
