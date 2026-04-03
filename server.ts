@@ -2,23 +2,18 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
 import { GoogleGenAI } from "@google/genai";
 import express from "express";
-import { z } from "zod"; // Tambahkan zod untuk validasi parameter
+import cors from "cors"; // Tambahkan ini
+import { z } from "zod";
 
-// 1. Inisialisasi Gemini (Gunakan process.env, bukan import.meta.env)
 const apiKey = process.env.GEMINI_API_KEY;
-if (!apiKey) {
-  throw new Error("GEMINI_API_KEY is required");
-}
-const ai = new GoogleGenAI({ apiKey });
+const ai = new GoogleGenAI({ apiKey: apiKey! });
 const modelName = "gemini-3-flash-preview";
 
-// 2. Buat MCP Server
 const server = new McpServer({
   name: "SafeGuard-Intelligence",
   version: "1.0.0",
 });
 
-// 3. Daftarkan Tool dengan Zod (Ini cara yang benar untuk SDK MCP terbaru)
 server.tool(
   "analyze_psychosocial_risk",
   "Menganalisis risiko psikososial pasien berdasarkan data FHIR dan skor asesmen",
@@ -27,49 +22,65 @@ server.tool(
     assessment_scores: z.string().describe("Skor DASS-21 atau SRQ-20")
   },
   async ({ patient_fhir_data, assessment_scores }) => {
-    try {
-      const model = ai.models.generateContent({
-        model: modelName,
-        contents: `Analisis risiko psikososial pasien berdasarkan data FHIR: ${patient_fhir_data} 
-                  dan skor asesmen: ${assessment_scores}. 
-                  Berikan output: Tingkat Risiko (L0-L3), Kode ICD-10 yang relevan, dan Rekomendasi Klinis.`
-      });
-
-      const response = await model;
-
-      return {
-        content: [{ type: "text", text: response.text || "Gagal mendapatkan analisis dari AI." }]
-      };
-    } catch (error) {
-      return {
-        content: [{ type: "text", text: `Error: ${error instanceof Error ? error.message : String(error)}` }],
-        isError: true
-      };
-    }
+    const model = ai.models.generateContent({
+      model: modelName,
+      contents: `Analisis risiko psikososial pasien berdasarkan data FHIR: ${patient_fhir_data} 
+                dan skor asesmen: ${assessment_scores}. 
+                Berikan output: Tingkat Risiko (L0-L3), Kode ICD-10 yang relevan, dan Rekomendasi Klinis.`
+    });
+    const response = await model;
+    return {
+      content: [{ type: "text", text: response.text || "Gagal" }]
+    };
   }
 );
 
-// 4. Jalankan Server via Express (SSE)
 const app = express();
+
+// 1. AKTIFKAN CORS (PENTING BANGET!)
+app.use(cors({
+  origin: "*", // Izinkan semua origin untuk hackathon
+  methods: ["GET", "POST", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization", "x-mcp-version"]
+}));
+
 app.use(express.json());
 
 let transport: SSEServerTransport | null = null;
 
 app.get("/sse", async (req, res) => {
-  console.log("New SSE connection established");
+  console.log("--- New SSE Connection Attempt ---");
+  
+  // 2. SET HEADER MANUAL UNTUK SSE
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no'); // Matikan buffering di Render/Nginx
+
   transport = new SSEServerTransport("/messages", res);
   await server.connect(transport);
+  
+  req.on('close', () => {
+    console.log("Connection closed");
+    transport = null;
+  });
 });
 
 app.post("/messages", async (req, res) => {
+  console.log("Received message from Prompt Opinion");
   if (transport) {
     await transport.handlePostMessage(req, res);
   } else {
-    res.status(400).send("No active SSE transport");
+    res.status(400).json({ error: "No active SSE session" });
   }
 });
 
+// Tambahkan route root biar nggak "Cannot GET /"
+app.get("/", (req, res) => {
+  res.send("SafeGuard MCP Server is Online! Use /sse for connection.");
+});
+
 const PORT = process.env.PORT || 3001;
-app.listen(PORT, () => {
-  console.log(`SafeGuard MCP Server running on port ${PORT}`);
+app.listen(PORT, "0.0.0.0", () => {
+  console.log(`Server running on port ${PORT}`);
 });

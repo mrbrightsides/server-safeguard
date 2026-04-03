@@ -1,14 +1,15 @@
 {
   "name": "safeguard-mcp",
   "version": "1.0.0",
-  "type": "module", 
+  "type": "module",
   "scripts": {
     "start": "node server.js",
     "dev": "tsx server.ts"
   },
   "dependencies": {
-    "@modelcontextprotocol/sdk": "^1.0.0",
     "@google/genai": "latest",
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "cors": "^2.8.6",
     "express": "^4.18.2",
     "zod": "^3.22.4"
   }
