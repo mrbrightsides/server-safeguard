@@ -5,8 +5,6 @@ import express from "express";
 import cors from "cors";
 import { z } from "zod";
 
-(res as any).flushHeaders?.();
-
 const app = express();
 app.use(cors());
 app.use(express.json());
